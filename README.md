@@ -21,7 +21,6 @@ Constraint Datasets
 8. Urgency (Derived from CrisisNLP)
 Constraint Functions
 1. Numerical Structure Constraints (word/sentence/POS counts and ranges)
-2. Lexical Structure Constraints (TODO)
 
 ## Implemented Baselines
 1. Score-based reranking
