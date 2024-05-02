@@ -1,10 +1,10 @@
 # ConGenBench
 Research on Controllable Text Generation has made significant progress over the past few years. This repository is an attempt to create a one-stop shop for researchers who want to benchmark their method on various tasks in Controllable Text Generation. This includes:
-1. Compilation of over 15 different generation tasks
+1. Compilation of over 17 different generation tasks
 2. Compilation of over 10 different constraint functions/datasets for the training of constraint satisfaction classifiers
 4. A prompt-based LLM distillation method that produces a constraint satisfaction classifier for any natural language constraint
 5. Implementations of 5 different baselines
-
+   
 ## Supported Task and Constraint Datasets
 
 ![ConGenBench](ConGenBench.jpg)
