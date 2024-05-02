@@ -7,25 +7,7 @@ Research on Controllable Text Generation has made significant progress over the 
 
 ## Supported Task and Constraint Datasets
 
-
-Conditional Text Continuation:
-- Prompts from DEXPERTS
-- Prompts from PPLM
-- Real Toxicity Prompts
-- Factuality Prompts
-- OPUS100
-- OPUS Books
-- ROC Stories
-- XSUM
-- CNN DailyMail
-- BookCorpus
-
-Conditional Task-Based Generation
-- Summarization: CNN DailyMail, XSUM, Gigaword
-- Story Writing: Writing Prompts, ROC Stories
-- Question Answering: ELI5, SQUAD
-- Factual Error Correction: FEVER, SciFact
-- Question Writing: SQUAD
+![ConGenBench](ConGenBench.jpg)
 
 ## Constraints
 Constraint Datasets
