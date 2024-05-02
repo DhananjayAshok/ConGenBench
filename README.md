@@ -1,12 +1,13 @@
-# ControllableLLMGeneration
+# ConGenBench
 Research on Controllable Text Generation has made significant progress over the past few years. This repository is an attempt to create a one-stop shop for researchers who want to benchmark their method on various tasks in Controllable Text Generation. This includes:
 1. Compilation of over 15 different generation tasks
 2. Compilation of over 10 different constraint functions/datasets for the training of constraint satisfaction classifiers
 4. A prompt-based LLM distillation method that produces a constraint satisfaction classifier for any natural language constraint
 5. Implementations of 5 different baselines
-6. Implementations of 5 different methods from the Controllable Text Generation Literature 
 
-## Task Datasets
+## Supported Task and Constraint Datasets
+
+
 Conditional Text Continuation:
 - Prompts from DEXPERTS
 - Prompts from PPLM
@@ -42,17 +43,10 @@ Constraint Functions
 
 ## Implemented Baselines
 1. Score-based reranking
-2. Prompt Tuning (TODO)
+2. Prompt Tuning
 3. ZeroShot Prompting
 4. FewShot Prompting
-5. LoRA / PEFT (TODO)
-
-## Implemented Methods
-1. NeuroLogic A*-Esque Decoding
-2. Future Discriminators for Generation (FUDGE)
-3. Controllable Text Generation with Sequence Likelihood Contrastive Learning (Click)
-4. Attribute Distribution Reconstruction (Air)
-5. Inference Time Policy Adapters (IPA)
+5. LoRA
 
 ## Available evaluation metrics
 1. Perspective API for Toxicity
