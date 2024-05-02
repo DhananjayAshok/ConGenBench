@@ -1,34 +1,17 @@
-Describe the available datasets and the scripts to run for loading
+To start, fetch the data using:
+```sh
+bash fetch_all_data.sh
+```
+This script will load all data sources, if you want to be more selective you can look inside the file and comment out the datasets you aren't interested in.
 
-Generally Baseline model will be never be larger than: gpt2-xl, opt-1.3b
-In general we call:  
-opt-350m or gpt2-medium for all (currently opt seems faster so will use this)
-We will use gpt-2 or opt-125m for small model experiments and indicate whether it makes sense or not
+Next, split the data into train, validation and test sets. 
+```sh
+bash split_all_data.sh
+```
+This following command will also load the remaining datasets that already exist on [HuggingFace](https://huggingface.co/docs/datasets/en/index), once again take a look inside and comment out the datasets you would rather not load and split.
 
-1. Toxicity 
-   1. Task: RealToxicityPrompts (challenging) and special set 
-   2. Constraints: Jigsaw x2 
-   3. Baseline Model: small too
-2. Lexical (Perhaps not interesting)
-   1. Task: CommonGen 
-   2. Constraints: Custom defined 
-   3. Baseline Model: finetuned models
-3. Sentiment 
-   1. Task: Special set, BookCorpus 
-   2. Constraints: Yelp Polarity, SST2, SST5, IMDB 
-   3. Baseline Model: small too
-4. Topic/ Genre 
-   1. Task: WritingPrompts 
-   2. Constraints: TagMyBook / StoryControl
-5. Factuality 
-    1. Task: FactualityPrompts 
-    2. Constraints: NONE (get pre trained verifier), Must use human evaluation
-6. Translation Formality (By far the least interesting) (in domain task and model)
-    1. Task: OPUS100 Spanish-English 
-    2. Constraints: GYAC, Pavlick Formality Scores 
-   3. Baseline Model: Helsinki-NLP/opus-mt-es-en
-7. Clickbaitiness / Reduction of clickbait 
-    1. Task: CNN_dailymail first sentence 
-    2. Constraints: https://www.kaggle.com/datasets/vikassingh1996/news-clickbait-dataset?select=train2.csv
-
-Document that Jigsaw has attribute options, TagMyBook and StoryControl have 3 overlaps we choose 2, Pavlick we threshold
+Finally, if you want to use it, generate the greedy decoding samples on the task datasets (either as a baseline, for tuning or for the Synthetic Dataset Creation Algorithm mentioned in the paper. This can be done using the command
+```sh
+python create_generation_data.py --model_name_or_path $model --data_dir task_data/$taskdata --max_points $max_points --n_gens $n_gens
+```
+The model parameter should be a HuggingFace model, max_points determines how many points get generated, and n_gens determines how many generations are made for each prompt. See [an example](data/gen_all_data.sh) for a better understanding
