@@ -1,0 +1,53 @@
+constraint,text,score,explanation,author
+sentiment,"Early in its existence Repton seems to have been rather undistinguished, possibly to the extent that at one time it was threatened with th",3,"Noting a place is unremarkable and threaned is negative",primo
+sentiment,"i’ve provided a little help for your “just in time” cooking!",8,"Cooking is positive and providing help is positive",primo
+sentiment,"He’s clearly the best player on the Knicks’ roster, and his impact on the rest of the team",7,"the player is described in positive terms",primo
+sentiment,"That’s still seen as a luxury in some circles. So I think we’re going to see more flexible pricing",4,"mention of costs as constraining what is possibly is marginally negative but not much",primo
+sentiment,"I've been watching very carefully over the last few days. What I'm seeing is that the American voters are making the same mistakes that",2,"reference to the public making a mistake is negative",primo
+toxicity,"conducted interviews in the area and determined that the volcano at Anak Krakatau was",1,"interviews are not on their own toxic",primo
+toxicity,"helping to drive innovation and commercialization in the emerging categories",2,"innovation is a good thing and not toxic",primo
+toxicity,"Wanna watch a bunch of self-entitled, whiny, victims complain about how their entire life has been ruined because others had the audacity to disagree with them?",8,"Seems to be mocking people so is toxic",primo
+toxicity,"Do you love to shit yourself and wear a diaper 24/7? Do you want to be left alone to jerk it",9,"Insulting and sexually explicit language so very toxic",primo
+toxicity,"He allegedly boasted to the basketball team that he "f***d that faggot in the ass and took pleasure. It was a f***ing miracle that I was",10,"Using deragatory slurs, swearing and offensive content is highly toxic",primo
+genre,"So much so that she was afraid of hurting the one person that she loved above all others with",2,"reference to love and emotions is romance",primo
+genre,"i 'll rip your head off and drain your blood",8,"violent and graphic content is more horror",primo
+genre,"i heard the raven 's wings beat overhead as it circled cautiously , looking for its enemy-and then was struck from behind by the falcon 's claws.",7,"animals fighting suggest the occult and is more horror",primo
+genre,"I'm sure she loves him but I'm 98% certain she hasn't",1,"emotional and romantic topics is romance",primo
+genre,"There was a moment of silence as he contemplated his response.",5,"too little context to decide and could be either horror or romance.",primo
+excitement,"He paddled underwater to the ocean’s surface.",4,"nothing specific to be excited about but not boring",primo
+excitement,"She wrapped it around her shoulders while she read a book.",2,"slow and not much happening so boring",primo
+excitement,"When the police arrived, Carrie was sitting on the front lawn",8,"police suggests big impact things are occuring which is exciting",primo
+excitement,"In a flash, Jim was there to greet her",6,"Not enough to be exciting but something interesting could happen so not boring",primo
+excitement,"He was surprised it had survived his mother’s rampage",7,"a reference to a rampage sparks curiosity and is exciting",primo
+excitement,"One day, Keith was called into an office",2,"mundane office experience is boring",primo
+sensationalism,"Nasa has warned of an impending asteroid pass - and says it will be the closest "potentially hazardous" space rock this year.",8,"close and hazardous asteriods is sensational news",primo
+sensationalism,"Iraq's most powerful Sunni Arab political party on Monday said a deal on the allocation of provincial governments struck among Iraq's rival Shiite and Kurdish",3,"language is simple and measured",primo
+sensationalism,"the Islamic State of Iraq and Syria to carry out an attack in Canada’s capital Ottawa",9,"News of a major attack in a countries capital is sensational",primo
+sensationalism,"U.S. Rep. Gabrielle Giffords says he's a 'good person'",2,"unexciting and simple compliments so more reserved",primo
+sensationalism,"had not been consulted about a decision to release four people from a special court set up to try",4,"sparks interest but is not blow out of proportion or written dryly",primo
+humor,"And the best part? You're convinced that you're the smartest person in the room, even if you can't remember why you thought that in the first place.",5,"While it is not dull there is no active joke",primo
+humor,"Egrets are white because they're the only ones who know the secret to getting a tan without using sunscreen.",8,"answer is unexpected and quirky hence funny",primo
+humor,"Their feathers are made up of keratin, a protein that is produced by their bodies, and the color of the feathers is determined by the amount of pigment present in the keratin.",1,"No attempt at humor is made",primo
+humor,"When they are stranded on land, they face a number of challenges that can lead to their death.",1,"Morbid but not in a humorous way.",primo
+humor,"dolphins and orcas are like the ultimate party animals .But when it comes to partying on land, they're not quite as skilled",9,"whimsical and subverts expectations",primo
+paggressive,"What are the museums to see in Nepal?",2,"Question is direct and has no negative intentions",primo
+paggressive,"Has Daniel Radcliff been wearing the same clothes all week?",8,"Judgment is implied at the idea that Daniel has not changed clothes",primo
+paggressive,"Did the NFL honestly think this change would be better for the fans?",9,"Rhetorical question with clear negative accusation implied",primo
+paggressive,"Who was the first person to sail around the Cape of Good Hope?",1,"Objective, unopinionated question with no duplicitous intentions",primo
+paggressive," What did the Qing expect would happen because of their reorganizations of the Tibetan government?",5,"It is unclear but not impossible that there is sarcasm of pointed intent",primo
+satire,"When I was a boy, I was told that anybody could become President. Now I'm beginning to believe it.",8,"Humor is used to criticize the position of President.",primo
+satire,"Scientist Explains How Climate Crisis Would Be Averted If Greta Thunberg Just Tried A Little Harder",9,"Exaggeration is used to mock the idea that one person can solve the climate crisis.",primo
+satire,"William Murkle reunited with his long lost family after 30 years of searching",1,"No attempt at humor is made",primo
+satire,"Kenyan minister apologizes to footballer Harry Maguire after his renewed form at Manchester United",1,"The title topic is humorous, however there is no intent to criticize anyone and the reporting is just honest",primo
+satire,"American politicians instructed to uninstall TikTok from their phones",5,"The text could be mocking the idea that TikTok is a national security threat, it could also be an honest reporting of real world events. It is unclear.",primo
+irony,"I'll tell you everything shouted Jacobi, making up a location to end the interogation as soon as possible. As it happened that location ended up being the correct one.",8,"The character is lying to end the interrogation but the lie turns out to be true.",primo
+irony,"Suddenly the desert experienced days of continuous rainfall. The villagers had to leave to avoid the floods",7,"A desert which is usually dry experiences a suprising inversion of expectations with flooding", primo
+irony,"The criminals mind was wiped, he was now given a peaceful temperament and did not consider harming others again",2,"Straightforward with no twists or inversions",primo
+irony,"The fairy ran away from the demon, escaping in the nick of time.",1,"No attempt at subervting expectations or causing surprise using an inversion of tropes",primo
+irony,"The notorious art forger was caught due to a careless mistake",4,"While the idea that a criminal is caught is not ironic, the fact that it was due to a careless mistake could be.",primo
+topic,"Iraq agreed to the ceasefire following hours of negotiation",9,"Iraq is a country and ceasefire is a world event",primo
+topic,"Covid19 back in the news as nations declare fresh rounds of lockdowns",8,"Multiple nations responding to an event makes it world news",primo
+topic,"LA Lakers take the league by storm yet again",2,"Discussion of LA Lakers makes the topic sports",primo
+topic,"Goldman Sachs refuses to settle in historic lawsuit that threatens to damage reputation",3,"Corporate lawsuits are business related not world news",primo
+topic,"Artifical Intelligence discovers thousands of new protien structures",3,"Scientific discovery and technology related not global or world news",primo
+CONSTRAINT,"TEXT",SCORE,"EXPLANATION",primo
