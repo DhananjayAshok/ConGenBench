@@ -1,0 +1,599 @@
+#!/usr/bin/env python
+# coding=utf-8
+# Copyright 2020 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+""" Finetuning the library models for sequence classification"""
+# Parts adapted from
+# https://github.com/Sachin19/mucoco/blob/sampling2/examples/training_constraint_models/train_classifier.py
+
+import logging
+import os
+import random
+import sys
+import warnings
+from dataclasses import dataclass, field
+from typing import Optional
+
+import datasets
+import evaluate
+import numpy as np
+from datasets import load_dataset
+
+import transformers
+from transformers import (
+    AutoConfig,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    DataCollatorWithPadding,
+    EvalPrediction,
+    HfArgumentParser,
+    PretrainedConfig,
+    Trainer,
+    TrainingArguments,
+    default_data_collator,
+    set_seed,
+)
+from transformers.trainer_utils import get_last_checkpoint
+from transformers.utils import check_min_version, send_example_telemetry
+from transformers.utils.versions import require_version
+import torch
+
+logger = logging.getLogger(__name__)
+
+
+def handle_special(base_config, base_tokenizer, model_args,
+                   embedding_model_name_or_path, embedding_strategy, finetune_strategy):
+    if embedding_strategy in [None, "none"]:
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_args.base_model_name_or_path,
+            from_tf=False,
+            config=base_config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            token=model_args.token,
+            trust_remote_code=model_args.trust_remote_code,
+            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+        )
+        tokenizer = base_tokenizer
+    if embedding_strategy == "vocab" and embedding_model_name_or_path is not None:  # Switch the vocab to fit the embedding model but keep embedding same
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_args.base_model_name_or_path,
+            from_tf=False,
+            config=base_config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            token=model_args.token,
+            trust_remote_code=model_args.trust_remote_code,
+            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+        )
+        tokenizer = AutoTokenizer.from_pretrained(embedding_model_name_or_path)
+        tokenizer.pad_token = tokenizer.eos_token
+        reorder_ind = torch.ones(tokenizer.vocab_size).long()
+        for i in range(tokenizer.vocab_size):
+            word = tokenizer.decode(i)
+            encoding = base_tokenizer.encode(word, add_special_tokens=False)[0]
+            reorder_ind[i] = encoding
+        new_embeds = torch.nn.Embedding(tokenizer.vocab_size, model.get_input_embeddings().weight.shape[1])
+        new_embeds.weight.data.copy_(model.get_input_embeddings().weight.data[reorder_ind])
+        base_config.vocab_size = tokenizer.vocab_size
+        base_config.bos_token_id = tokenizer.bos_token_id
+        base_config.eos_token_id = tokenizer.eos_token_id
+        base_config.unk_token_id = tokenizer.unk_token_id
+        del model
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_args.base_model_name_or_path,
+            from_tf=False,
+            config=base_config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            token=model_args.token,
+            trust_remote_code=model_args.trust_remote_code,
+            ignore_mismatched_sizes=True
+        )
+        model.set_input_embeddings(new_embeds)
+    elif embedding_strategy == "freeze":
+        if embedding_model_name_or_path is None:
+            embeds = model.get_input_embeddings()
+            for p in embeds.parameters():
+                p.requires_grad = False
+            tokenizer = base_tokenizer
+        else:
+            embedding_model = AutoModelForSequenceClassification.from_pretrained(embedding_model_name_or_path,
+                                                                                 num_labels=1)
+            tokenizer = AutoTokenizer.from_pretrained(embedding_model_name_or_path)
+            tokenizer.model_max_length = min(base_tokenizer.model_max_length, tokenizer.model_max_length)
+            tokenizer.pad_token = tokenizer.eos_token
+            embeds = embedding_model.get_input_embeddings()
+            new_embeds = torch.nn.Embedding(embeds.num_embeddings, embeds.embedding_dim)
+            for p in new_embeds.parameters():
+                p.requires_grad = False
+            new_embeds.weight.data.copy_(embeds.weight)
+            base_config.vocab_size = new_embeds.num_embeddings
+            base_config.bos_token_id = tokenizer.bos_token_id
+            base_config.eos_token_id = tokenizer.eos_token_id
+            base_config.unk_token_id = tokenizer.unk_token_id
+            model = AutoModelForSequenceClassification.from_pretrained(
+                model_args.base_model_name_or_path,
+                from_tf=False,
+                config=base_config,
+                cache_dir=model_args.cache_dir,
+                revision=model_args.model_revision,
+                token=model_args.token,
+                trust_remote_code=model_args.trust_remote_code,
+                ignore_mismatched_sizes=True,
+            )
+            assert model.get_input_embeddings().embedding_dim == new_embeds.embedding_dim, "Can't use this strategy unless embedding dim lines up"
+            model.set_input_embeddings(new_embeds)
+    if finetune_strategy == "head":
+        for p in model.base_model.parameters():
+            p.requires_grad = False
+
+    return base_config, tokenizer, model
+
+@dataclass
+class DataTrainingArguments:
+    """
+    Arguments pertaining to what data we are going to input our model for training and eval.
+
+    Using `HfArgumentParser` we can turn this class
+    into argparse arguments to be able to specify them on
+    the command line.
+    """
+    data_dir: str = field(
+        metadata={"help": "path to directory containing the train, val and test csv files"}
+    )
+
+    max_seq_length: int = field(
+        default=128,
+        metadata={
+            "help": (
+                "The maximum total input sequence length after tokenization. Sequences longer "
+                "than this will be truncated, sequences shorter will be padded."
+            )
+        },
+    )
+    overwrite_cache: bool = field(
+        default=False, metadata={"help": "Overwrite the cached preprocessed datasets or not."}
+    )
+    pad_to_max_length: bool = field(
+        default=True,
+        metadata={
+            "help": (
+                "Whether to pad all samples to `max_seq_length`. "
+                "If False, will pad the samples dynamically when batching to the maximum length in the batch."
+            )
+        },
+    )
+    max_train_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "For debugging purposes or quicker training, truncate the number of training examples to this "
+                "value if set."
+            )
+        },
+    )
+    max_eval_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "For debugging purposes or quicker training, truncate the number of evaluation examples to this "
+                "value if set."
+            )
+        },
+    )
+    max_predict_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "For debugging purposes or quicker training, truncate the number of prediction examples to this "
+                "value if set."
+            )
+        },
+    )
+
+    def __post_init__(self):
+        self.train_file = self.data_dir + "/train.csv"
+        self.validation_file = self.data_dir + "/validation.csv"
+        self.test_file = self.data_dir + "/test.csv"
+
+
+@dataclass
+class ModelArguments:
+    """
+    Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
+    """
+
+    base_model_name_or_path: str = field(
+        metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
+    )
+    embedding_model_name_or_path: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
+    )
+    embedding_strategy: Optional[str] = field(
+        default=None,
+        metadata={"help": "How to deal with embeddings, options are: None, random, freeze or vocab"}
+    )
+    finetune_strategy: Optional[str] = field(
+        default="full",
+        metadata={"help": "How to finetune, options are: full, head"}
+    )
+    cache_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
+    )
+
+    use_fast_tokenizer: bool = field(
+        default=True,
+        metadata={"help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."},
+    )
+    model_revision: str = field(
+        default="main",
+        metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
+    )
+    token: str = field(
+        default=None,
+        metadata={
+            "help": (
+                "The token to use as HTTP bearer authorization for remote files. If not specified, will use the token "
+                "generated when running `huggingface-cli login` (stored in `~/.huggingface`)."
+            )
+        },
+    )
+    use_auth_token: bool = field(
+        default=None,
+        metadata={
+            "help": "The `use_auth_token` argument is deprecated and will be removed in v4.34. Please use `token`."
+        },
+    )
+    trust_remote_code: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Whether or not to allow for custom models defined on the Hub in their own modeling files. This option"
+                "should only be set to `True` for repositories you trust and in which you have read the code, as it will"
+                "execute code present on the Hub on your local machine."
+            )
+        },
+    )
+    ignore_mismatched_sizes: bool = field(
+        default=False,
+        metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
+    )
+
+    def __post_init__(self):
+        if self.embedding_strategy == "None" or self.embedding_strategy == "none":
+            self.embedding_strategy = None
+        assert self.embedding_strategy in [None, "random", "freeze", "vocab"]
+        assert self.finetune_strategy in ["full", "head"]
+
+
+def main():
+    # See all possible arguments in src/transformers/training_args.py
+    # or by passing the --help flag to this script.
+    # We now keep distinct sets of args, for a cleaner separation of concerns.
+
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
+        # If we pass only one argument to the script and it's the path to a json file,
+        # let's parse it to get our arguments.
+        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+    else:
+        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    if model_args.use_auth_token is not None:
+        warnings.warn("The `use_auth_token` argument is deprecated and will be removed in v4.34.", FutureWarning)
+        if model_args.token is not None:
+            raise ValueError("`token` and `use_auth_token` are both specified. Please set only the argument `token`.")
+        model_args.token = model_args.use_auth_token
+
+    # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
+    # information sent is the one passed as arguments along with your Python/PyTorch versions.
+    send_example_telemetry("run_glue", model_args, data_args)
+
+    # Setup logging
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+
+    if training_args.should_log:
+        # The default of training_args.log_level is passive, so we set log level at info here to have that default.
+        transformers.utils.logging.set_verbosity_info()
+
+    log_level = training_args.get_process_log_level()
+    logger.setLevel(log_level)
+    datasets.utils.logging.set_verbosity(log_level)
+    transformers.utils.logging.set_verbosity(log_level)
+    transformers.utils.logging.enable_default_handler()
+    transformers.utils.logging.enable_explicit_format()
+
+    # Log on each process the small summary:
+    logger.warning(
+        f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
+        + f"distributed training: {training_args.parallel_mode.value == 'distributed'}, 16-bits training: {training_args.fp16}"
+    )
+    logger.info(f"Training/evaluation parameters {training_args}")
+
+    # Detecting last checkpoint.
+    last_checkpoint = None
+    if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
+        last_checkpoint = get_last_checkpoint(training_args.output_dir)
+        if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
+            raise ValueError(
+                f"Output directory ({training_args.output_dir}) already exists and is not empty. "
+                "Use --overwrite_output_dir to overcome."
+            )
+        elif last_checkpoint is not None and training_args.resume_from_checkpoint is None:
+            logger.info(
+                f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
+                "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
+            )
+
+    # Set seed before initializing model.
+    set_seed(training_args.seed)
+
+    data_files = {"train": data_args.train_file, "validation": data_args.validation_file}#, "test": data_args.test_file}
+
+    for key in data_files.keys():
+        logger.info(f"load a local file for {key}: {data_files[key]}")
+
+    if data_args.train_file.endswith(".csv"):
+        # Loading a dataset from local csv files
+        raw_datasets = load_dataset(
+            "csv",
+            data_files=data_files,
+            cache_dir=model_args.cache_dir,
+            token=model_args.token,
+        )
+    else:
+        # Loading a dataset from local json files
+        raw_datasets = load_dataset(
+            "json",
+            data_files=data_files,
+            cache_dir=model_args.cache_dir,
+            token=model_args.token,
+        )
+
+    # Labels
+    is_regression = raw_datasets["train"].features["label"].dtype in ["float32", "float64"]
+    if is_regression:
+        num_labels = 1
+    else:
+        # A useful fast method:
+        # https://huggingface.co/docs/datasets/package_reference/main_classes.html#datasets.Dataset.unique
+        label_list = raw_datasets["train"].unique("label")
+        label_list.sort()  # Let's sort it for determinism
+        num_labels = len(label_list)
+
+    # Load pretrained model and tokenizer
+    #
+    # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
+    # download model & vocab.
+    config = AutoConfig.from_pretrained(
+        model_args.base_model_name_or_path,
+        num_labels=num_labels,
+        cache_dir=model_args.cache_dir,
+        revision=model_args.model_revision,
+        token=model_args.token,
+        trust_remote_code=model_args.trust_remote_code,
+    )
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_args.base_model_name_or_path,
+        cache_dir=model_args.cache_dir,
+        use_fast=model_args.use_fast_tokenizer,
+        revision=model_args.model_revision,
+        token=model_args.token,
+        trust_remote_code=model_args.trust_remote_code,
+    )
+
+    if training_args.do_train:
+        config, tokenizer, model = handle_special(base_config=config, base_tokenizer=tokenizer, model_args=model_args,
+                                                  embedding_model_name_or_path=model_args.embedding_model_name_or_path,
+                                                  embedding_strategy=model_args.embedding_strategy,
+                                                  finetune_strategy=model_args.finetune_strategy)
+        tokenizer.save_pretrained(f"{training_args.output_dir}")
+        config.save_pretrained(f"{training_args.output_dir}")
+    else:
+        raise ValueError("bruh?")
+
+    # Preprocessing the raw_datasets
+    non_label_column_names = [name for name in raw_datasets["train"].column_names if name != "label"]
+    sentence1_key, sentence2_key = non_label_column_names[0], None
+
+    # Padding strategy
+    if data_args.pad_to_max_length:
+        padding = "max_length"
+    else:
+        # We will pad later, dynamically at batch creation, to the max sequence length in each batch
+        padding = False
+
+    # Some models have set the order of the labels to use, so let's make sure we do use it.
+    label_to_id = None
+    if not is_regression:
+        label_to_id = {v: i for i, v in enumerate(label_list)}
+
+    if label_to_id is not None:
+        model.config.label2id = label_to_id
+        model.config.id2label = {id: label for label, id in config.label2id.items()}
+
+    if data_args.max_seq_length > tokenizer.model_max_length:
+        logger.warning(
+            f"The max_seq_length passed ({data_args.max_seq_length}) is larger than the maximum length for the"
+            f"model ({tokenizer.model_max_length}). Using max_seq_length={tokenizer.model_max_length}."
+        )
+    max_seq_length = min(data_args.max_seq_length, tokenizer.model_max_length)
+
+    def preprocess_function(examples):
+        # Tokenize the texts
+        args = (
+            (examples[sentence1_key],)
+        )
+        result = tokenizer(*args, padding=padding, max_length=max_seq_length, truncation=True)
+
+        # Map labels to IDs (not necessary for GLUE tasks)
+        if label_to_id is not None and "label" in examples:
+            result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
+        return result
+
+    with training_args.main_process_first(desc="dataset map pre-processing"):
+        raw_datasets = raw_datasets.map(
+            preprocess_function,
+            batched=True,
+            load_from_cache_file=not data_args.overwrite_cache,
+            desc="Running tokenizer on dataset",
+        )
+    if training_args.do_train:
+        if "train" not in raw_datasets:
+            raise ValueError("--do_train requires a train dataset")
+        train_dataset = raw_datasets["train"]
+        if data_args.max_train_samples is not None:
+            max_train_samples = min(len(train_dataset), data_args.max_train_samples)
+            train_dataset = train_dataset.select(range(max_train_samples))
+
+    if training_args.do_eval:
+        if "validation" not in raw_datasets:
+            raise ValueError("--do_eval requires a validation dataset")
+        eval_dataset = raw_datasets["validation"]
+        if data_args.max_eval_samples is not None:
+            max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
+            eval_dataset = eval_dataset.select(range(max_eval_samples))
+
+    if training_args.do_predict :
+        if "test" not in raw_datasets:
+            raise ValueError("--do_predict requires a test dataset")
+        predict_dataset = raw_datasets["test"]
+        if data_args.max_predict_samples is not None:
+            max_predict_samples = min(len(predict_dataset), data_args.max_predict_samples)
+            predict_dataset = predict_dataset.select(range(max_predict_samples))
+
+    # Log a few random samples from the training set:
+    if training_args.do_train:
+        for index in random.sample(range(len(train_dataset)), 3):
+            logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
+
+    # Get the metric function
+    if is_regression:
+        metric = evaluate.load("mse")
+    else:
+        metric = evaluate.load("accuracy")
+
+    # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
+    # predictions and label_ids field) and has to return a dictionary string to float.
+    def compute_metrics(p: EvalPrediction):
+        preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+        preds = np.squeeze(preds) if is_regression else np.argmax(preds, axis=1)
+        result = metric.compute(predictions=preds, references=p.label_ids)
+        if len(result) > 1:
+            result["combined_score"] = np.mean(list(result.values())).item()
+        return result
+
+    # Data collator will default to DataCollatorWithPadding when the tokenizer is passed to Trainer, so we change it if
+    # we already did the padding.
+    if data_args.pad_to_max_length:
+        data_collator = default_data_collator
+    elif training_args.fp16:
+        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
+    else:
+        data_collator = None
+
+    # Initialize our Trainer
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset if training_args.do_train else None,
+        eval_dataset=eval_dataset if training_args.do_eval else None,
+        compute_metrics=compute_metrics,
+        tokenizer=tokenizer,
+        data_collator=data_collator,
+    )
+
+    # Training
+    if training_args.do_train:
+        checkpoint = None
+        if training_args.resume_from_checkpoint is not None:
+            checkpoint = training_args.resume_from_checkpoint
+        elif last_checkpoint is not None:
+            checkpoint = last_checkpoint
+        train_result = trainer.train(resume_from_checkpoint=checkpoint)
+        metrics = train_result.metrics
+        max_train_samples = (
+            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+        )
+        metrics["train_samples"] = min(max_train_samples, len(train_dataset))
+
+        trainer.save_model()  # Saves the tokenizer too for easy upload
+
+        trainer.log_metrics("train", metrics)
+        trainer.save_metrics("train", metrics)
+        trainer.save_state()
+
+    # Evaluation
+    if training_args.do_eval:
+        logger.info("*** Evaluate ***")
+
+        tasks = ["classification"]
+        eval_datasets = [eval_dataset]
+        for eval_dataset, task in zip(eval_datasets, tasks):
+            metrics = trainer.evaluate(eval_dataset=eval_dataset)
+
+            max_eval_samples = (
+                data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+            )
+            metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
+
+            trainer.log_metrics("eval", metrics)
+            trainer.save_metrics("eval", metrics)
+
+    if training_args.do_predict:
+        logger.info("*** Predict ***")
+
+        # Loop to handle MNLI double evaluation (matched, mis-matched)
+        tasks = ["classification"]
+        predict_datasets = [predict_dataset]
+        for predict_dataset, task in zip(predict_datasets, tasks):
+            # Removing the `label` columns because it contains -1 and Trainer won't like that.
+            predict_dataset = predict_dataset.remove_columns("label")
+            predictions = trainer.predict(predict_dataset, metric_key_prefix="predict").predictions
+            predictions = np.squeeze(predictions) if is_regression else np.argmax(predictions, axis=1)
+
+            output_predict_file = os.path.join(training_args.output_dir, f"predict_results_{task}.txt")
+            if trainer.is_world_process_zero():
+                with open(output_predict_file, "w") as writer:
+                    logger.info(f"***** Predict results {task} *****")
+                    writer.write("index\tprediction\n")
+                    for index, item in enumerate(predictions):
+                        if is_regression:
+                            writer.write(f"{index}\t{item:3.3f}\n")
+                        else:
+                            item = label_list[item]
+                            writer.write(f"{index}\t{item}\n")
+
+    kwargs = {"finetuned_from": model_args.base_model_name_or_path, "tasks": "text-classification"}
+
+    if training_args.push_to_hub:
+        trainer.push_to_hub(**kwargs)
+    else:
+        trainer.create_model_card(**kwargs)
+
+
+def _mp_fn(index):
+    # For xla_spawn (TPUs)
+    main()
+
+
+if __name__ == "__main__":
+    main()
